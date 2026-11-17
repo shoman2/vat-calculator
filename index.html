@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>정밀 부가가치세 계산기 (VAT Calculator)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header with Claude Anthropic Aesthetic -->
+    <header class="app-header">
+      <div class="logo-area">
+        <svg class="anthropic-spike" width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2V22M2 12H22M4.93 4.93L19.07 19.07M4.93 19.07L19.07 4.93" stroke="#141413" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+        <h1>정밀 부가가치세 계산기</h1>
+        <span class="badge-coral">PRO</span>
+      </div>
+      <p class="subtitle">대한민국 부가가치세법 및 국세징수법 단수처리 규정 준수 · 엑셀 대사 및 시각화</p>
+    </header>
+
+    <!-- Main Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button type="button" class="tab-btn active" data-tab="single">단일 정밀 계산기</button>
+      <button type="button" class="tab-btn" data-tab="excel">📊 엑셀 대사·일괄 계산</button>
+      <button type="button" class="tab-btn" data-tab="dashboard">📈 통계·시각화 대시보드</button>
+      <button type="button" class="tab-btn" data-tab="mixed">과세·면세 복합 계산</button>
+      <button type="button" class="tab-btn" data-tab="history">계산 이력</button>
+    </nav>
+
+    <!-- Tab 1: Single Calculator -->
+    <main id="tab-single" class="tab-content active">
+      <div class="grid-layout">
+        <!-- Input & Options Panel -->
+        <section class="card form-panel">
+          <h2 class="card-title">계산 옵션 및 금액 입력</h2>
+
+          <!-- Tax Type Selection -->
+          <div class="field-group">
+            <label class="field-label">과세 유형</label>
+            <div class="pill-group" id="taxTypeGroup">
+              <label class="pill active">
+                <input type="radio" name="taxType" value="general" checked>
+                <span>일반과세 (10%)</span>
+              </label>
+              <label class="pill">
+                <input type="radio" name="taxType" value="zero">
+                <span>영세율 (0%)</span>
+              </label>
+              <label class="pill">
+                <input type="radio" name="taxType" value="taxfree">
+                <span>면세 (비과세)</span>
+              </label>
+              <label class="pill">
+                <input type="radio" name="taxType" value="simplified">
+                <span>간이과세</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Simplified Tax Rate Sub-option (Hidden by default) -->
+          <div class="field-group hidden" id="simplifiedSubGroup">
+            <label class="field-label" for="simplifiedRate">간이과세 업종별 부가가치율</label>
+            <select id="simplifiedRate" class="select-box">
+              <option value="0.15">소매업, 음식점업 (15% × 10% = 1.5%)</option>
+              <option value="0.20">제조업, 농림어업 (20% × 10% = 2.0%)</option>
+              <option value="0.30">건설업, 운수·창고업 (30% × 10% = 3.0%)</option>
+              <option value="0.40">부동산임대, 전문서비스업 (40% × 10% = 4.0%)</option>
+            </select>
+          </div>
+
+          <!-- Rounding Method Selection -->
+          <div class="field-group">
+            <label class="field-label">
+              단수처리(끝전) 방식
+              <span class="info-tip" title="세금계산서 표준은 반올림이며, 국세징수법 제74조에 따라 국가 징수 시 10원 미만은 절사합니다.">ℹ️</span>
+            </label>
+            <div class="select-grid">
+              <label class="radio-label">
+                <input type="radio" name="rounding" value="round" checked>
+                <span>반올림 (세금계산서 표준)</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="rounding" value="floor">
+                <span>원단위 절사 (버림)</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="rounding" value="taxFloor10">
+                <span>국세법 10원 미만 절사</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="rounding" value="ceil">
+                <span>올림</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Special Options (Tip / Service Fee, Non-deductible) -->
+          <div class="field-group options-row">
+            <label class="checkbox-label">
+              <input type="checkbox" id="hasTip">
+              <span>봉사료(비과세) 분리 입력</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="nonDeductible">
+              <span>매입세액 불공제 항목 (비용 산입)</span>
+            </label>
+          </div>
+
+          <!-- Tip Input (Conditional) -->
+          <div class="field-group hidden" id="tipInputGroup">
+            <label class="field-label" for="tipInput">봉사료 금액 (비과세)</label>
+            <div class="input-wrapper">
+              <input type="text" id="tipInput" class="num-input" placeholder="0" inputmode="numeric">
+              <span class="unit">원</span>
+            </div>
+          </div>
+
+          <hr class="divider">
+
+          <!-- Core Amount Inputs -->
+          <div class="inputs-stack">
+            <!-- Supply Value (공급가액) -->
+            <div class="amount-field highlight-field">
+              <div class="field-header">
+                <label for="supplyInput">공급가액 (단가/과세표준)</label>
+                <span class="badge-sm">기준 입력</span>
+              </div>
+              <div class="input-wrapper">
+                <input type="text" id="supplyInput" class="num-input main-input" placeholder="0" inputmode="numeric">
+                <span class="unit">원</span>
+              </div>
+              <p class="korean-spelling" id="supplyKorean">-</p>
+            </div>
+
+            <!-- Quick Add Amount Buttons -->
+            <div class="quick-btns">
+              <button type="button" class="btn-chip" data-add="10000">+1만</button>
+              <button type="button" class="btn-chip" data-add="50000">+5만</button>
+              <button type="button" class="btn-chip" data-add="100000">+10만</button>
+              <button type="button" class="btn-chip" data-add="1000000">+100만</button>
+              <button type="button" class="btn-chip" data-add="10000000">+1,000만</button>
+              <button type="button" class="btn-chip danger" id="btnToggleSign">± 마이너스</button>
+              <button type="button" class="btn-chip reset" id="btnReset">초기화</button>
+            </div>
+
+            <div class="calc-direction-divider">
+              <span>또는 합계금액에서 역산</span>
+            </div>
+
+            <!-- Total Amount (합계금액 / 공급대가) -->
+            <div class="amount-field">
+              <div class="field-header">
+                <label for="totalInput">합계금액 (공급대가 / 실결제액)</label>
+                <span class="badge-sm alt">역산 입력</span>
+              </div>
+              <div class="input-wrapper">
+                <input type="text" id="totalInput" class="num-input" placeholder="0" inputmode="numeric">
+                <span class="unit">원</span>
+              </div>
+              <p class="korean-spelling" id="totalKorean">-</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Result Summary & Tax Invoice Card (Dark Product Mockup Surface) -->
+        <section class="card result-panel card-dark">
+          <div class="card-header-row">
+            <h2 class="card-title text-on-dark">계산 결과 명세서</h2>
+            <span class="badge-pill-dark">실시간 산출</span>
+          </div>
+
+          <div class="summary-box summary-box-dark">
+            <div class="summary-row">
+              <span class="label">공급가액</span>
+              <span class="value" id="resSupply">0 원</span>
+            </div>
+            <div class="summary-row" id="resTipRow" style="display: none;">
+              <span class="label">비과세 봉사료</span>
+              <span class="value" id="resTip">0 원</span>
+            </div>
+            <div class="summary-row tax-row tax-row-dark">
+              <span class="label">
+                부가가치세 (<span id="resTaxRateLabel">10%</span>)
+                <span class="tax-tag tax-tag-dark" id="resTaxTag">일반과세</span>
+              </span>
+              <span class="value text-coral" id="resVat">0 원</span>
+            </div>
+            <div class="summary-divider summary-divider-dark"></div>
+            <div class="summary-row total-row">
+              <span class="label text-on-dark">총 합계금액 (공급대가)</span>
+              <div class="value-block">
+                <span class="value text-coral-strong" id="resTotal">0 원</span>
+                <span class="total-korean total-korean-dark" id="resTotalKorean">영 원</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Non-deductible notice banner -->
+          <div class="notice-banner hidden" id="nonDeductibleBanner">
+            ⚠️ <strong>매입세액 불공제 대상</strong>: 부가세액은 공제되지 않으며 전액 비용/취득원가로 산입됩니다.
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="action-buttons">
+            <button type="button" class="btn btn-primary" id="btnCopyText">
+              <span>📋 요약 복사</span>
+            </button>
+            <button type="button" class="btn btn-secondary-on-dark" id="btnCopyInvoice">
+              <span>🧾 표 서식 복사</span>
+            </button>
+            <button type="button" class="btn btn-secondary-on-dark" id="btnSaveHistory">
+              <span>💾 이력 저장</span>
+            </button>
+          </div>
+
+          <!-- Electronic Tax Invoice Preview Mockup -->
+          <div class="invoice-preview invoice-preview-dark">
+            <div class="invoice-header invoice-header-dark">전자세금계산서 표준 기재사항 요약</div>
+            <table class="invoice-table invoice-table-dark">
+              <thead>
+                <tr>
+                  <th>공급가액 (과세표준)</th>
+                  <th>세액</th>
+                  <th>합계금액</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td id="tableSupply">0</td>
+                  <td id="tableVat" class="text-coral">0</td>
+                  <td id="tableTotal">0</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="invoice-footer invoice-footer-dark" id="invoiceFormula">
+              공식: 공급가액 = 합계 ÷ 1.1 | 세액 = 공급가액 × 10%
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Tab 2: Excel Audit & Batch Calculation (New) -->
+    <main id="tab-excel" class="tab-content">
+      <div class="card">
+        <div class="card-header-row">
+          <div>
+            <h2 class="card-title">엑셀 일괄 대사 및 부가세 검증</h2>
+            <p class="card-desc">엑셀 파일을 끌어다 놓으면 공급가액, 세액, 합계금액을 자동으로 찾아 대사(오차 검증) 및 재계산합니다.</p>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline" id="btnDownloadSample">📥 샘플 엑셀 다운로드</button>
+        </div>
+
+        <!-- Drag & Drop Zone -->
+        <div class="drop-zone" id="dropZone">
+          <input type="file" id="excelFileInput" accept=".xlsx, .xls, .csv" class="file-hidden-input">
+          <div class="drop-zone-content">
+            <div class="drop-icon">📑</div>
+            <p class="drop-title">엑셀(.xlsx, .xls) 또는 CSV 파일을 여기로 드래그하세요</p>
+            <p class="drop-sub">또는 클릭하여 파일 선택</p>
+          </div>
+        </div>
+
+        <!-- File Processed Control Bar (Hidden until file is loaded) -->
+        <div id="excelControlSection" class="hidden">
+          <div class="excel-meta-bar">
+            <div class="meta-item">
+              <span class="meta-label">파일명:</span>
+              <strong id="excelFileName">-</strong>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">시트 선택:</span>
+              <select id="excelSheetSelect" class="select-box-sm"></select>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">총 데이터 건수:</span>
+              <span id="excelRowCount" class="badge-sm">0건</span>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline danger" id="btnResetExcel">새 파일 불러오기</button>
+          </div>
+
+          <!-- Column Mapping & Settings -->
+          <div class="mapping-box">
+            <div class="mapping-title-row">
+              <span class="section-subtitle">열(Column) 자동 매핑 및 대사 기준</span>
+              <div class="quick-audit-filters">
+                <span class="filter-label">단수처리 기준:</span>
+                <select id="excelRoundingMode" class="select-box-sm">
+                  <option value="round">반올림 (세금계산서 표준)</option>
+                  <option value="floor">원단위 절사 (버림)</option>
+                  <option value="taxFloor10">국세법 10원 미만 절사</option>
+                  <option value="ceil">올림</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="mapping-grid">
+              <div class="mapping-item">
+                <label for="colMapItem">품목/적요명 열</label>
+                <select id="colMapItem" class="select-box-sm"></select>
+              </div>
+              <div class="mapping-item">
+                <label for="colMapSupply">공급가액 열 <span class="req">*</span></label>
+                <select id="colMapSupply" class="select-box-sm"></select>
+              </div>
+              <div class="mapping-item">
+                <label for="colMapVat">부가세액 열</label>
+                <select id="colMapVat" class="select-box-sm"></select>
+              </div>
+              <div class="mapping-item">
+                <label for="colMapTotal">합계금액(공급대가) 열</label>
+                <select id="colMapTotal" class="select-box-sm"></select>
+              </div>
+            </div>
+
+            <!-- Batch Action Tools -->
+            <div class="batch-tools-bar">
+              <div class="tool-group">
+                <span class="tool-label">일괄 자동 처리:</span>
+                <button type="button" class="btn btn-sm btn-outline" id="btnRecalcFromSupply">
+                  ⚡ 공급가액 기준으로 세액·합계 재계산
+                </button>
+                <button type="button" class="btn btn-sm btn-outline" id="btnRecalcFromTotal">
+                  🔄 합계금액 기준으로 공급가액·세액 역산
+                </button>
+              </div>
+              <div class="tool-group-right">
+                <button type="button" class="btn btn-sm btn-primary" id="btnExportAuditedExcel">
+                  📊 대사 결과 엑셀 내보내기 (.xlsx)
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Summary Metric Cards -->
+          <div class="stats-grid">
+            <div class="stat-card">
+              <span class="stat-label">공급가액 총합계</span>
+              <span class="stat-value" id="statSumSupply">0 원</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">부가세액 총합계</span>
+              <span class="stat-value text-danger" id="statSumVat">0 원</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">총 공급대가 (합계)</span>
+              <span class="stat-value text-primary" id="statSumTotal">0 원</span>
+            </div>
+            <div class="stat-card alert-stat">
+              <span class="stat-label">대사 불일치 / 오차 건수</span>
+              <div class="stat-alert-box">
+                <span class="stat-value text-danger" id="statMismatchCount">0 건</span>
+                <span class="stat-sub" id="statMismatchDesc">정상</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- View Filter Pills -->
+          <div class="table-filter-bar">
+            <div class="filter-pills" id="excelViewFilters">
+              <button type="button" class="filter-pill active" data-filter="all">전체 내역 보기 (<span id="filterCountAll">0</span>)</button>
+              <button type="button" class="filter-pill" data-filter="mismatch">⚠️ 불일치/오차만 보기 (<span id="filterCountMismatch">0</span>)</button>
+              <button type="button" class="filter-pill" data-filter="match">✅ 정상 일치만 보기 (<span id="filterCountMatch">0</span>)</button>
+            </div>
+          </div>
+
+          <!-- Excel Data & Audit Grid Table -->
+          <div class="table-container excel-table-wrap">
+            <table class="excel-data-table" id="excelAuditTable">
+              <thead>
+                <tr>
+                  <th style="width: 50px;">No</th>
+                  <th>품목/적요</th>
+                  <th class="text-right">엑셀 공급가액</th>
+                  <th class="text-right">엑셀 부가세액</th>
+                  <th class="text-right">계산 부가세 (10%)</th>
+                  <th class="text-right">엑셀 합계금액</th>
+                  <th class="text-right">계산 합계금액</th>
+                  <th class="text-center" style="width: 120px;">대사 결과</th>
+                  <th>오차 내용</th>
+                </tr>
+              </thead>
+              <tbody id="excelTableBody">
+                <!-- Dynamically rendered -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Tab: Visualization Dashboard (New) -->
+    <main id="tab-dashboard" class="tab-content">
+      <div class="card">
+        <div class="card-header-row">
+          <div>
+            <h2 class="card-title">부가세 및 전표 통계 시각화 대시보드</h2>
+            <p class="card-desc">업로드된 엑셀/CSV 데이터를 바탕으로 월별 추이, 거래처별 비중, 품목별 분석 차트를 실시간 시각화합니다.</p>
+          </div>
+          <button type="button" class="btn btn-sm btn-primary" id="btnLoadSampleToDashboard">
+            🚀 5,000건 샘플 데이터로 즉시 분석하기
+          </button>
+        </div>
+
+        <!-- Empty State if no file uploaded -->
+        <div id="dashEmptyState" class="dash-empty-box">
+          <div class="dash-empty-icon">📊</div>
+          <h3>분석할 데이터가 아직 없습니다.</h3>
+          <p><strong>[엑셀 대사·일괄 계산]</strong> 탭에서 엑셀/CSV 파일을 업로드하시거나, 상단의 <strong>'5,000건 샘플 데이터로 즉시 분석하기'</strong>를 클릭해보세요.</p>
+        </div>
+
+        <!-- Dashboard Content (Hidden until data is loaded) -->
+        <div id="dashContentSection" class="hidden">
+          <!-- Top KPI Metrics -->
+          <div class="stats-grid dash-kpi-grid">
+            <div class="stat-card">
+              <span class="stat-label">총 전표 건수</span>
+              <span class="stat-value" id="kpiCount">0 건</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">총 공급가액</span>
+              <span class="stat-value" id="kpiSumSupply">0 원</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">총 부가가치세</span>
+              <span class="stat-value text-danger" id="kpiSumVat">0 원</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">총 공급대가 (합계)</span>
+              <span class="stat-value text-primary" id="kpiSumTotal">0 원</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">건당 평균 공급가액</span>
+              <span class="stat-value" id="kpiAvgSupply">0 원</span>
+            </div>
+            <div class="stat-card alert-stat">
+              <span class="stat-label">대사 오차율</span>
+              <span class="stat-value text-danger" id="kpiErrorRate">0.0%</span>
+            </div>
+          </div>
+
+          <!-- Charts Grid -->
+          <div class="dash-charts-grid">
+            <!-- Chart 1: Monthly Trend -->
+            <div class="chart-card chart-wide">
+              <div class="chart-card-header">
+                <h3>월별 공급가액 및 부가세 추이</h3>
+                <span class="chart-tag">복합 바/라인</span>
+              </div>
+              <div class="chart-canvas-wrapper">
+                <canvas id="chartMonthlyTrend"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 2: Top 10 Vendors -->
+            <div class="chart-card">
+              <div class="chart-card-header">
+                <h3>거래처별 공급가액 TOP 10</h3>
+                <span class="chart-tag">수평 바</span>
+              </div>
+              <div class="chart-canvas-wrapper">
+                <canvas id="chartTopVendors"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 3: Item Category Breakdown -->
+            <div class="chart-card">
+              <div class="chart-card-header">
+                <h3>주요 품목별 지출/매출 비중</h3>
+                <span class="chart-tag">도넛 차트</span>
+              </div>
+              <div class="chart-canvas-wrapper">
+                <canvas id="chartItemShare"></canvas>
+              </div>
+            </div>
+
+            <!-- Chart 4: Audit Status Doughnut -->
+            <div class="chart-card">
+              <div class="chart-card-header">
+                <h3>부가세 대사 정합성 비율</h3>
+                <span class="chart-tag">정상 vs 오차</span>
+              </div>
+              <div class="chart-canvas-wrapper">
+                <canvas id="chartAuditStatus"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Tab 3: Mixed / Composite Calculator (과세 + 면세) -->
+    <main id="tab-mixed" class="tab-content">
+      <div class="card">
+        <h2 class="card-title">과세 · 면세 복합 계산기</h2>
+        <p class="card-desc">하나의 영수증/거래명세서에 과세 물품과 면세 물품(농수산물 등)이 함께 있는 경우 분리 집계합니다.</p>
+
+        <div class="mixed-grid">
+          <div class="mixed-input-col">
+            <div class="field-group">
+              <label class="field-label">과세 품목 공급가액 (10%)</label>
+              <div class="input-wrapper">
+                <input type="text" id="mixedTaxableInput" class="num-input" placeholder="0">
+                <span class="unit">원</span>
+              </div>
+            </div>
+            <div class="field-group">
+              <label class="field-label">면세 품목 금액 (비과세 0%)</label>
+              <div class="input-wrapper">
+                <input type="text" id="mixedTaxFreeInput" class="num-input" placeholder="0">
+                <span class="unit">원</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="mixed-result-col">
+            <div class="summary-box">
+              <div class="summary-row">
+                <span class="label">과세 공급가액</span>
+                <span class="value" id="mixedResTaxable">0 원</span>
+              </div>
+              <div class="summary-row">
+                <span class="label">면세 공급가액</span>
+                <span class="value" id="mixedResTaxFree">0 원</span>
+              </div>
+              <div class="summary-row tax-row">
+                <span class="label">부가가치세 (과세품목 10%)</span>
+                <span class="value text-danger" id="mixedResVat">0 원</span>
+              </div>
+              <div class="summary-divider"></div>
+              <div class="summary-row total-row">
+                <span class="label">총 결제/청구금액</span>
+                <span class="value text-primary" id="mixedResTotal">0 원</span>
+              </div>
+            </div>
+            <button type="button" class="btn btn-primary btn-block" id="btnCopyMixed">📋 복합 결과 복사</button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Tab 3: History -->
+    <main id="tab-history" class="tab-content">
+      <div class="card">
+        <div class="card-header-row">
+          <h2 class="card-title">최근 계산 기록</h2>
+          <button type="button" class="btn btn-sm btn-outline danger" id="btnClearHistory">기록 전체 삭제</button>
+        </div>
+        <div class="table-container">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>일시</th>
+                <th>구분</th>
+                <th>단수처리</th>
+                <th>공급가액</th>
+                <th>부가세액</th>
+                <th>합계금액</th>
+                <th>적용</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody">
+              <tr>
+                <td colspan="7" class="empty-state">저장된 계산 이력이 없습니다.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast">클립보드에 복사되었습니다!</div>
+  </div>
+
+  <script src="calculator.js"></script>
+  <script src="excel.js"></script>
+  <script src="dashboard.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
